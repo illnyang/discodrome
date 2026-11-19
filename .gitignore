@@ -134,8 +134,10 @@ dmypy.json
 /ffmpeg.exe
 /data.env
 
-# Python pickle files
+# Saved guild state
 *.pickle
+/guild_properties.json
+/guild_properties.json.tmp
 
 # Visual Studio Code
 .vscode

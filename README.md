@@ -105,6 +105,12 @@ The Compose file builds from your local checkout, including any merged changes. 
 | `BOT_PREFIX` | Command prefix for the bot. If unset, prefix commands can still be used with an @mention. An empty string will cause all messages to be interpreted as commands. | No |
 | `BOT_SEARCH_SUGGESTION_COUNT` | Number of items to display in the autocomplete menu. Defaults to 5. | No |
 
+### Saved Guild State
+
+Queues, autoplay mode, and audio balance mode are saved to `guild_properties.json`. On first startup, an existing `guild_properties.pickle` is migrated automatically and retained as a backup. Invalid saved state stops startup to avoid overwriting it; repair the file or restore a backup before restarting.
+
+Audio balance defaults to `dynamic`; use `/audiobalance` or `?audiobalance` with `off`, `replaygain`, or `dynamic`. Changes apply to the next track.
+
 ### Supported Subsonic Servers
 
 - Navidrome
