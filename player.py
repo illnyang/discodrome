@@ -30,12 +30,44 @@ def build_audio_filter(mode: AudioBalanceMode) -> str | None:
 
     return None
 
+def build_voice_status(song: Song, position: int) -> str:
+    ''' Keep the playback timestamp visible within Discord's 500-character limit. '''
+    timestamp = f" ({position // 60:02d}:{position % 60:02d}/{song.duration_printable})"
+    track = f"{song.title} by {song.artist}"
+    return track[:500 - len(timestamp)] + timestamp
+
+
+class PlaybackSource(discord.AudioSource):
+    ''' Track playback using Discord's 20 ms audio frames, including after a seek. '''
+    def __init__(self, source: discord.AudioSource, position: int) -> None:
+        self.original = source
+        self.frames = position * 50
+        self._cleaned = False
+
+    def read(self) -> bytes:
+        data = self.original.read()
+        if data:
+            self.frames += 1
+        return data
+
+    def is_opus(self) -> bool:
+        return self.original.is_opus()
+
+    @property
+    def _current_error(self) -> Exception | None:
+        return getattr(self.original, "_current_error", None)
+
+    def cleanup(self) -> None:
+        if not self._cleaned:
+            self._cleaned = True
+            self.original.cleanup()
+
+
 class Player():
     ''' Class that represents an audio player '''
     def __init__(self, guild_properties: Any) -> None:
         self._data = {
             "current-song": None,
-            "current-position": 0,
             "queue": [],
             "channel": None,
         }
@@ -43,6 +75,8 @@ class Player():
         self._player_loop = None
         self._stopped = False
         self._playback_id = 0
+        self._audio_source: PlaybackSource | None = None
+        self._voice_status_task: asyncio.Task[None] | None = None
 
     @property
     def current_song(self) -> Song:
@@ -52,16 +86,15 @@ class Player():
     @current_song.setter
     def current_song(self, song: Song) -> None:
         self._data["current-song"] = song
+        self._audio_source = None
 
     @property
     def current_position(self) -> int:
-        ''' The current position for the current song, in seconds. '''
-        return self._data["current-position"]
-
-    @current_position.setter
-    def current_position(self, position: int) -> None:
-        ''' Set the current position for the current song, in seconds. '''
-        self._data["current-position"] = position
+        ''' The current playback position, excluding time spent paused. '''
+        position = self._audio_source.frames // 50 if self._audio_source is not None else 0
+        if self.current_song is not None and self.current_song.duration > 0:
+            return min(position, self.current_song.duration)
+        return position
 
     @property
     def queue(self) -> list[Song]:
@@ -122,6 +155,24 @@ class Player():
         except discord.HTTPException as error:
             logger.warning("Failed to update voice channel status: %s", error)
 
+    def _stop_voice_status_updates(self) -> None:
+        if self._voice_status_task is not None:
+            self._voice_status_task.cancel()
+            self._voice_status_task = None
+
+    async def _refresh_voice_status(self, song: Song, voice_client: discord.VoiceClient, playback_id: int) -> None:
+        position = self.current_position
+        while True:
+            await asyncio.sleep(15)
+            if playback_id != self._playback_id or not voice_client.is_connected():
+                return
+            if not (voice_client.is_playing() or voice_client.is_paused()):
+                return
+            current_position = self.current_position
+            if current_position != position:
+                await self._set_voice_status(build_voice_status(song, current_position), voice_client)
+                position = current_position
+
 
 
 
@@ -163,7 +214,7 @@ class Player():
                 await self._send("Error", "Failed to get audio stream. Please try again.")
                 return False
 
-            audio_src = discord.FFmpegOpusAudio(stream_url, **ffmpeg_options)
+            audio_src = PlaybackSource(discord.FFmpegOpusAudio(stream_url, **ffmpeg_options), position or 0)
         except APIError as err:
             logger.error(f"API Error streaming song, Code {err.errorcode}: {err.message}")
             await self._send("Error", f"API error while streaming song: {err.message}")
@@ -185,6 +236,7 @@ class Player():
         was_paused = position is not None and voice_client.is_paused()
         self._playback_id += 1
         playback_id = self._playback_id
+        self._stop_voice_status_updates()
         self._stopped = False
         if position is not None:
             voice_client.stop()
@@ -198,6 +250,7 @@ class Player():
             # A seek replaces the audio source without advancing the queue.
             if playback_id != self._playback_id:
                 return
+            self._stop_voice_status_updates()
             await self._set_voice_status(None, voice_client)
             if playback_id != self._playback_id:
                 return
@@ -236,7 +289,7 @@ class Player():
                     await self._send("Error", "Voice connection was lost. Please try again.")
                     return False
 
-                await self._set_voice_status(f"Currently playing: {song.title} by {song.artist}", voice_client)
+                await self._set_voice_status(build_voice_status(song, audio_src.frames // 50), voice_client)
                 if playback_id != self._playback_id or self._stopped:
                     audio_src.cleanup()
                     if playback_id == self._playback_id:
@@ -245,7 +298,9 @@ class Player():
                 voice_client.play(audio_src, after=lambda e: asyncio.run_coroutine_threadsafe(playback_finished(e), loop))
                 if was_paused:
                     voice_client.pause()
-                self.current_position = position or 0
+                self._audio_source = audio_src
+                if isinstance(voice_client.channel, discord.VoiceChannel):
+                    self._voice_status_task = asyncio.create_task(self._refresh_voice_status(song, voice_client, playback_id))
                 logger.info(f"Started playing: {song.title} by {song.artist}")
                 return True
             except discord.ClientException as e:
@@ -345,6 +400,7 @@ class Player():
     def stop(self, voice_client: discord.VoiceClient) -> None:
         ''' Stops playback without advancing the queue '''
         self._stopped = True
+        self._stop_voice_status_updates()
         self.current_song = None
         voice_client.stop()
 

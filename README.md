@@ -56,6 +56,10 @@ Colon-separated minutes and seconds require two digits from `00` to `59`; hours 
 
 Queue positions are 1-based and exclude the currently playing track. Use `/queue` (or `?queue`) to browse ten tracks per page, `/queue action:Remove index:2` (`?queue remove 2`) to remove a track, or `/queue action:Move index:3 target:1` (`?queue move 3 1`) to move one. Page buttons are available only to the command's author and show a snapshot of the queue.
 
+The queue's **Now Playing** section shows `(current time/total time)`, for example `(01:23/04:56)`. The timestamp is captured when you request the queue and remains unchanged when browsing that snapshot's pages.
+
+Regular voice channels show `Track by Artist (current time/total time)`. Progress refreshes every 15 seconds when the timestamp changes, and the status clears when playback stops or finishes. Grant the bot `Set Voice Channel Status` to enable this display.
+
 ---
 
 ## Requirements

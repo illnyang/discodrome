@@ -41,7 +41,7 @@ def parse_seek_position(timestamp: str, duration: int) -> int:
 
 QUEUE_ITEMS_PER_PAGE = 10
 
-def build_queue_embed(current_song, queue: list, page: int, items_per_page: int = QUEUE_ITEMS_PER_PAGE) -> discord.Embed:
+def build_queue_embed(current_song, queue: list, page: int, current_position: int, items_per_page: int = QUEUE_ITEMS_PER_PAGE) -> discord.Embed:
     ''' Builds the queue embed for the selected page. '''
 
     output = ""
@@ -49,7 +49,7 @@ def build_queue_embed(current_song, queue: list, page: int, items_per_page: int 
         output += (
             f"**Now Playing:**\n"
             f"{current_song.title} - *{current_song.artist}*\n"
-            f"{current_song.album} ({current_song.duration_printable})\n\n"
+            f"{current_song.album} ({current_position // 60:02d}:{current_position % 60:02d}/{current_song.duration_printable})\n\n"
         )
 
     if len(queue) == 0:
@@ -79,10 +79,11 @@ def format_queue_song(song) -> str:
 class QueueView(discord.ui.View):
     ''' Button controls for paged queue output. '''
 
-    def __init__(self, user_id: int, current_song, queue: list, items_per_page: int = QUEUE_ITEMS_PER_PAGE) -> None:
+    def __init__(self, user_id: int, current_song, queue: list, current_position: int, items_per_page: int = QUEUE_ITEMS_PER_PAGE) -> None:
         super().__init__(timeout=180)
         self.user_id = user_id
         self.current_song = current_song
+        self.current_position = current_position
         self.queue = list(queue)
         self.items_per_page = items_per_page
         self.page = 0
@@ -97,7 +98,7 @@ class QueueView(discord.ui.View):
         return False
 
     def current_embed(self) -> discord.Embed:
-        return build_queue_embed(self.current_song, self.queue, self.page, self.items_per_page)
+        return build_queue_embed(self.current_song, self.queue, self.page, self.current_position, self.items_per_page)
 
     def _update_buttons(self) -> None:
         self.previous_page.disabled = self.page <= 0
@@ -662,7 +663,7 @@ class MusicCog(commands.Cog):
             await ui.SysMsg.msg(ctx, "Moved queue track", f"{format_queue_song(moved_song)}\n{index} -> {target}")
             return
 
-        view = QueueView(ctx.author.id, player.current_song, queue)
+        view = QueueView(ctx.author.id, player.current_song, queue, player.current_position)
         embed = view.current_embed()
 
         if view.page_count == 1:

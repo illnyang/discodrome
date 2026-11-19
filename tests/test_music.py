@@ -13,6 +13,7 @@ with patch.dict(os.environ, {"DISCORD_OWNER_ID": "0", "DISCORD_TEST_GUILD": "", 
     from discord.ext import commands
     from extensions.music import MusicCog, QueueView, parse_seek_position
     from subsonic import Song
+    from player import PlaybackSource
 
 
 class QueueTests(unittest.IsolatedAsyncioTestCase):
@@ -70,12 +71,30 @@ class QueueTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_empty_queue_still_shows_current_song(self):
         self.player.queue.clear()
-        self.player.current_song = Song({"id": "current", "title": "Current Track"})
+        self.player.current_song = Song({"id": "current", "title": "Current Track", "duration": 245})
+        self.player._audio_source = PlaybackSource(Mock(spec=discord.AudioSource), 83)
         await self.cog.show_queue.callback(self.cog, self.ctx)
         response = self.ctx.send.call_args.kwargs
         self.assertNotIn("view", response)
         self.assertIn("Current Track", response["embed"].description)
         self.assertIn("Queue is empty!", response["embed"].description)
+        self.assertIn("(01:23/04:05)", response["embed"].description)
+
+    async def test_queue_timestamp_is_a_snapshot_and_refreshes_on_next_request(self):
+        self.player.current_song = Song({"id": "current", "duration": 245})
+        audio = Mock(spec=discord.AudioSource)
+        audio.read.return_value = b"audio packet"
+        self.player._audio_source = PlaybackSource(audio, 83)
+        await self.cog.show_queue.callback(self.cog, self.ctx)
+        view = self.ctx.send.call_args.kwargs["view"]
+        self.assertIn("(01:23/04:05)", view.current_embed().description)
+        for _ in range(50):
+            self.player._audio_source.read()
+        interaction = SimpleNamespace(response=SimpleNamespace(edit_message=AsyncMock()))
+        await view.next_page.callback(interaction)
+        self.assertIn("(01:23/04:05)", interaction.response.edit_message.call_args.kwargs["embed"].description)
+        await self.cog.show_queue.callback(self.cog, self.ctx)
+        self.assertIn("(01:24/04:05)", self.ctx.send.call_args.kwargs["embed"].description)
 
 
 class SeekTimestampTests(unittest.TestCase):
@@ -141,6 +160,7 @@ class PlaybackControlTests(unittest.IsolatedAsyncioTestCase):
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
+        self.addCleanup(self.player._stop_voice_status_updates)
 
     async def test_pause_and_resume_long_and_short_commands_preserve_song_and_queue(self):
         for pause_command, resume_command in (
