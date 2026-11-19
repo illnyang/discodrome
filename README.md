@@ -70,6 +70,8 @@ Queue positions are 1-based and exclude the currently playing track. Use `/queue
 8. Select bot permissions: `Send Messages`, `Connect`, `Speak`, `Use Voice Activity`, `Read Message History`
 9. Copy the generated URL and paste it into your browser to invite the bot to your server
 
+To show the current track and artist in a regular voice channel's status, also grant `Set Voice Channel Status`. The status is cleared when playback finishes or stops; stage channels are left unchanged. Status-update failures are logged without interrupting playback.
+
 ### Step 2 — Gather Required Information
 
 - **Discord Bot Token** — from Step 1
@@ -115,7 +117,7 @@ Queues, autoplay mode, and audio balance mode are saved to `guild_properties.jso
 
 Audio balance defaults to `dynamic`; use `/audiobalance` or `?audiobalance` with `off`, `replaygain`, or `dynamic`. Changes apply to the next track.
 
-Run the isolated persistence, audio-filter, and queue regression checks with `python -m unittest discover -s tests -v`. They do not connect to Discord or Subsonic.
+Run the isolated persistence, audio-filter, queue, and voice-status regression checks with `python -m unittest discover -s tests -v`. They do not connect to Discord or Subsonic.
 
 ### Supported Subsonic Servers
 

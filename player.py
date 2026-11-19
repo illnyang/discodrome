@@ -109,6 +109,18 @@ class Player():
                 logger.error(f"Failed to attach thumbnail: {e}")
         await self.channel.send(file=file, embed=embed)
 
+    async def _set_voice_status(self, updated_status: str | None, voice_client: discord.VoiceClient) -> None:
+        ''' Update a regular voice channel's status without interrupting playback. '''
+        channel = voice_client.channel
+        if not isinstance(channel, discord.VoiceChannel):
+            return
+        if updated_status is not None:
+            updated_status = updated_status[:500]
+        try:
+            await channel.edit(status=updated_status)
+        except discord.HTTPException as error:
+            logger.warning("Failed to update voice channel status: %s", error)
+
 
 
 
@@ -160,6 +172,7 @@ class Player():
 
         # Handle playback finished
         async def playback_finished(error):
+            await self._set_voice_status(None, voice_client)
             if error:
                 logger.error(f"An error occurred while playing the audio: {error}")
                 return
@@ -191,7 +204,8 @@ class Player():
                     await self._send("Error", "Voice connection was lost. Please try again.")
                     return
 
-                voice_client.play(audio_src, after=lambda e: loop.create_task(playback_finished(e)))
+                await self._set_voice_status(f"Currently playing: {song.title} by {song.artist}", voice_client)
+                voice_client.play(audio_src, after=lambda e: asyncio.run_coroutine_threadsafe(playback_finished(e), loop))
                 logger.info(f"Started playing: {song.title} by {song.artist}")
                 return  # Success, exit the function
             except discord.ClientException as e:
