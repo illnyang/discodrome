@@ -23,7 +23,7 @@ Music commands are hybrid commands, so they can be used as slash commands or wit
 | `/play` | `?play` | Place a specified track, album, or playlist at the end of the queue and start playing |
 | `/next` | `?next` | Place a specified track next in the queue and start playing |
 | `/disco` | `?disco` | Play an artist's entire discography |
-| `/queue` | `?queue` | View the current queue |
+| `/queue` | `?queue` | View, remove, or move tracks in the current queue |
 | `/clear` | `?clear` | Clear the current queue |
 | `/shuffle` | `?shuffle` | Shuffle the current queue |
 | `/skip` | `?skip` | Skip the current track |
@@ -36,6 +36,8 @@ Music commands are hybrid commands, so they can be used as slash commands or wit
 | `/sync` | `?sync` | Sync application commands (owner only) |
 
 The existing short music commands are available in both forms as well: `/p` and `?p` play a track, `/n` and `?n` queue one next, `/s` and `?s` skip, and `/q` and `?q` show the queue. Replace `?` with your configured `BOT_PREFIX` when it differs from the default. Prefix queries containing spaces can be entered as the remaining text after the command; quote playlist names when also specifying a page.
+
+Queue positions are 1-based and exclude the currently playing track. Use `/queue` (or `?queue`) to browse ten tracks per page, `/queue action:Remove index:2` (`?queue remove 2`) to remove a track, or `/queue action:Move index:3 target:1` (`?queue move 3 1`) to move one. Page buttons are available only to the command's author and show a snapshot of the queue.
 
 ---
 
@@ -110,6 +112,8 @@ The Compose file builds from your local checkout, including any merged changes. 
 Queues, autoplay mode, and audio balance mode are saved to `guild_properties.json`. On first startup, an existing `guild_properties.pickle` is migrated automatically and retained as a backup. Invalid saved state stops startup to avoid overwriting it; repair the file or restore a backup before restarting.
 
 Audio balance defaults to `dynamic`; use `/audiobalance` or `?audiobalance` with `off`, `replaygain`, or `dynamic`. Changes apply to the next track.
+
+Run the isolated persistence, audio-filter, and queue regression checks with `python -m unittest discover -s tests -v`. They do not connect to Discord or Subsonic.
 
 ### Supported Subsonic Servers
 

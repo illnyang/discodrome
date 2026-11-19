@@ -45,7 +45,11 @@ class GuildPersistenceTests(unittest.TestCase):
         self.assertEqual(data.guild_properties(1).autoplay_mode, AutoplayMode.SIMILAR)
         player = data.guild_data(1).player
         self.assertEqual(player.guild_properties.audio_balance_mode, AudioBalanceMode.OFF)
-        self.assertEqual(data._song_to_dict(player.queue[0]), data._song_to_dict(song))
+        restored = player.queue[0]
+        self.assertEqual(
+            (restored.song_id, restored.title, restored.artist, restored.duration),
+            ("track-1", "Track", "Artist", 123),
+        )
         self.assertEqual(data.guild_data(2).player.queue, [])
 
     def test_legacy_enum_path_migrates_with_queue_and_new_defaults(self):
