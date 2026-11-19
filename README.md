@@ -37,6 +37,8 @@ Music commands are hybrid commands, so they can be used as slash commands or wit
 
 The existing short music commands are available in both forms as well: `/p` and `?p` play a track, `/n` and `?n` queue one next, `/s` and `?s` skip, and `/q` and `?q` show the queue. Replace `?` with your configured `BOT_PREFIX` when it differs from the default. Prefix queries containing spaces can be entered as the remaining text after the command; quote playlist names when also specifying a page.
 
+`/play` and `/next` suggest matching tracks as you type; an empty track query suggests random tracks.
+
 Queue positions are 1-based and exclude the currently playing track. Use `/queue` (or `?queue`) to browse ten tracks per page, `/queue action:Remove index:2` (`?queue remove 2`) to remove a track, or `/queue action:Move index:3 target:1` (`?queue move 3 1`) to move one. Page buttons are available only to the command's author and show a snapshot of the queue.
 
 ---

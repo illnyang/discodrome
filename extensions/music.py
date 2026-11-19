@@ -431,6 +431,7 @@ class MusicCog(commands.Cog):
 
     @commands.hybrid_command(name="next", description="Searches for a track and places it next in the queue")
     @app_commands.describe(query="Enter a search query")
+    @app_commands.autocomplete(query=play_query_autocomplete)
     async def play_next(self, ctx: commands.Context, *, query: str) -> None:
         ''' Search for a track and place it next in the queue '''
         # This is a duplication of efforts made in the normal play function.
