@@ -42,6 +42,7 @@ class Player():
         self._guild_properties = guild_properties
         self._player_loop = None
         self._stopped = False
+        self._playback_id = 0
 
     @property
     def current_song(self) -> Song:
@@ -125,27 +126,33 @@ class Player():
 
 
 
-    async def stream_track(self, song: Song, voice_client: discord.VoiceClient) -> None:
-        ''' Streams a track from the Subsonic server to a connected voice channel, and updates guild data accordingly '''
+    async def stream_track(self, song: Song, voice_client: discord.VoiceClient, *, position: int | None = None) -> bool:
+        ''' Start a track, or seek within the current track when a position is supplied. '''
 
         # Make sure the voice client is available and connected
         if voice_client is None:
             await self._send("Error", "Not currently connected to a voice channel.")
-            return
+            return False
 
         # Check if the voice client is still connected
         if not voice_client.is_connected():
             logger.error("Voice client is not connected")
             await self._send("Error", "Voice connection was lost. Please try again.")
-            return
+            return False
 
-        # Make sure the bot isn't already playing music
-        if voice_client.is_playing():
+        active = voice_client.is_playing() or voice_client.is_paused()
+        if position is None and active:
             await self._send("Error", "Already playing.")
-            return
+            return False
+        if position is not None and (self.current_song is not song or not active):
+            await self._send("Error", "No track is playing.")
+            return False
+        previous_playback_id = self._playback_id
 
         # Get the stream from the Subsonic server, using the provided song's ID
         ffmpeg_options = {"before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"}
+        if position is not None:
+            ffmpeg_options["before_options"] += f" -ss {position}"
         audio_filter = build_audio_filter(self.guild_properties.audio_balance_mode)
         if audio_filter is not None:
             ffmpeg_options["options"] = f"-filter:a {audio_filter}"
@@ -154,17 +161,33 @@ class Player():
             if not stream_url:
                 logger.error("Failed to get stream URL")
                 await self._send("Error", "Failed to get audio stream. Please try again.")
-                return
+                return False
 
             audio_src = discord.FFmpegOpusAudio(stream_url, **ffmpeg_options)
         except APIError as err:
             logger.error(f"API Error streaming song, Code {err.errorcode}: {err.message}")
             await self._send("Error", f"API error while streaming song: {err.message}")
-            return
+            return False
         except Exception as e:
             logger.error(f"Unexpected error getting audio stream: {e}")
             await self._send("Error", "An error occurred while preparing the audio. Please try again.")
-            return
+            return False
+
+        if position is not None and (
+            self._playback_id != previous_playback_id
+            or self.current_song is not song
+            or not (voice_client.is_playing() or voice_client.is_paused())
+        ):
+            audio_src.cleanup()
+            await self._send("Error", "Playback changed before the seek could finish. Please try again.")
+            return False
+
+        was_paused = position is not None and voice_client.is_paused()
+        self._playback_id += 1
+        playback_id = self._playback_id
+        self._stopped = False
+        if position is not None:
+            voice_client.stop()
 
         # Begin playing the song
         loop = asyncio.get_running_loop()
@@ -172,7 +195,12 @@ class Player():
 
         # Handle playback finished
         async def playback_finished(error):
+            # A seek replaces the audio source without advancing the queue.
+            if playback_id != self._playback_id:
+                return
             await self._set_voice_status(None, voice_client)
+            if playback_id != self._playback_id:
+                return
             if error:
                 logger.error(f"An error occurred while playing the audio: {error}")
                 return
@@ -197,28 +225,44 @@ class Player():
         attempt = 0
 
         while attempt < max_attempts:
+            if playback_id != self._playback_id:
+                audio_src.cleanup()
+                return False
             try:
                 # Check again if voice client is still connected before playing
                 if not voice_client.is_connected():
                     logger.error("Voice client disconnected before playing")
+                    audio_src.cleanup()
                     await self._send("Error", "Voice connection was lost. Please try again.")
-                    return
+                    return False
 
                 await self._set_voice_status(f"Currently playing: {song.title} by {song.artist}", voice_client)
+                if playback_id != self._playback_id or self._stopped:
+                    audio_src.cleanup()
+                    if playback_id == self._playback_id:
+                        await self._set_voice_status(None, voice_client)
+                    return False
                 voice_client.play(audio_src, after=lambda e: asyncio.run_coroutine_threadsafe(playback_finished(e), loop))
+                if was_paused:
+                    voice_client.pause()
+                self.current_position = position or 0
                 logger.info(f"Started playing: {song.title} by {song.artist}")
-                return  # Success, exit the function
+                return True
             except discord.ClientException as e:
                 logger.error(f"Discord client exception while playing audio (attempt {attempt+1}): {e}")
                 attempt += 1
                 if attempt >= max_attempts:
+                    audio_src.cleanup()
+                    await self._set_voice_status(None, voice_client)
                     await self._send("Error", "Failed to play audio after multiple attempts. Please try again.")
-                    return
+                    return False
                 await asyncio.sleep(1)  # Wait before retrying
             except Exception as err:
                 logger.error(f"An error occurred while playing the audio: {err}")
+                audio_src.cleanup()
+                await self._set_voice_status(None, voice_client)
                 await self._send("Error", "An error occurred while playing the audio. Please try again.")
-                return
+                return False
 
 
     async def handle_autoplay(self, prev_song_id: str=None) -> bool:
@@ -270,7 +314,7 @@ class Player():
             return
 
         # Check if the bot is already playing something
-        if voice_client.is_playing():
+        if voice_client.is_playing() or voice_client.is_paused():
             return
 
         # Check if the queue contains songs
@@ -313,7 +357,7 @@ class Player():
             return
         logger.debug("Skipping track...")
         # Check if the bot is already playing something
-        if voice_client.is_playing():
+        if voice_client.is_playing() or voice_client.is_paused():
             voice_client.stop()
             await self._send("Skipped track")
         else:

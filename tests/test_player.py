@@ -18,18 +18,22 @@ class VoiceStatusTests(unittest.IsolatedAsyncioTestCase):
         self.voice = Mock(spec=discord.VoiceClient)
         self.voice.is_connected.return_value = True
         self.voice.is_playing.return_value = False
+        self.voice.is_paused.return_value = False
         self.voice.channel = Mock(spec=discord.VoiceChannel)
         self.voice.channel.edit = AsyncMock()
         self.song = SimpleNamespace(song_id="track", title="Track", artist="Artist")
+        self.player._send = AsyncMock()
+        self.stream = AsyncMock(return_value="https://example.invalid/track")
+        self.audio_factory = Mock()
         for patcher in (
-            patch("player.stream", new=AsyncMock(return_value="https://example.invalid/track")),
-            patch("player.discord.FFmpegOpusAudio"),
+            patch("player.stream", new=self.stream),
+            patch("player.discord.FFmpegOpusAudio", new=self.audio_factory),
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    async def finish_track(self):
-        after = self.voice.play.call_args.kwargs["after"]
+    async def finish_track(self, after=None):
+        after = after or self.voice.play.call_args.kwargs["after"]
         future = await asyncio.to_thread(after, None)
         await asyncio.wrap_future(future)
 
@@ -77,3 +81,69 @@ class VoiceStatusTests(unittest.IsolatedAsyncioTestCase):
         await self.finish_track()
         self.voice.channel.edit.assert_awaited_with(status=None)
         self.player.play_audio_queue.assert_not_awaited()
+
+    async def test_seek_keeps_song_and_queue_and_ignores_replaced_source_callback(self):
+        await self.player.stream_track(self.song, self.voice)
+        old_after = self.voice.play.call_args.kwargs["after"]
+        self.player.current_song = self.song
+        self.player.queue = ["queued"]
+        self.voice.is_playing.return_value = True
+
+        self.assertTrue(await self.player.stream_track(self.song, self.voice, position=42))
+        self.assertIn("-ss 42", self.audio_factory.call_args.kwargs["before_options"])
+        self.assertEqual(self.player.current_position, 42)
+        self.assertIs(self.player.current_song, self.song)
+        self.assertEqual(self.player.queue, ["queued"])
+        self.voice.channel.edit.reset_mock()
+        await self.finish_track(old_after)
+        self.voice.channel.edit.assert_not_awaited()
+        self.player.play_audio_queue.assert_not_awaited()
+        await self.finish_track()
+        self.player.play_audio_queue.assert_awaited_once_with(self.voice)
+
+    async def test_seek_preserves_paused_state(self):
+        self.player.current_song = self.song
+        self.voice.is_paused.return_value = True
+        self.assertTrue(await self.player.stream_track(self.song, self.voice, position=0))
+        self.voice.pause.assert_called_once()
+        self.assertEqual(self.player.current_position, 0)
+        self.player.play_audio_queue.assert_not_awaited()
+
+    async def test_failed_seek_preparation_keeps_original_playback(self):
+        self.player.current_song = self.song
+        self.player.queue = ["queued"]
+        self.voice.is_playing.return_value = True
+        self.stream.return_value = ""
+        with self.assertLogs("player", level="ERROR"):
+            self.assertFalse(await self.player.stream_track(self.song, self.voice, position=10))
+        self.voice.stop.assert_not_called()
+        self.voice.play.assert_not_called()
+        self.assertIs(self.player.current_song, self.song)
+        self.assertEqual(self.player.queue, ["queued"])
+
+    async def test_track_change_during_seek_does_not_stop_the_new_track(self):
+        self.player.current_song = self.song
+        self.voice.is_playing.return_value = True
+        next_song = SimpleNamespace(song_id="next")
+        async def change_track(song_id):
+            self.player.current_song = next_song
+            return "https://example.invalid/track"
+        self.stream.side_effect = change_track
+        self.assertFalse(await self.player.stream_track(self.song, self.voice, position=10))
+        self.voice.stop.assert_not_called()
+        self.audio_factory.return_value.cleanup.assert_called_once()
+        self.assertIs(self.player.current_song, next_song)
+
+    async def test_enqueue_does_not_advance_a_paused_track(self):
+        self.player.current_song = self.song
+        self.player.queue = ["queued"]
+        self.voice.is_paused.return_value = True
+        await Player.play_audio_queue(self.player, self.voice)
+        self.assertIs(self.player.current_song, self.song)
+        self.assertEqual(self.player.queue, ["queued"])
+        self.voice.play.assert_not_called()
+
+    async def test_skip_can_stop_a_paused_track(self):
+        self.voice.is_paused.return_value = True
+        await self.player.skip_track(self.voice)
+        self.voice.stop.assert_called_once()

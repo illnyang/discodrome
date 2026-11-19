@@ -3,6 +3,7 @@ from typing import List
 import discord
 import logging
 import asyncio
+import re
 from discord import app_commands, Interaction
 from discord.ext import commands
 
@@ -17,6 +18,26 @@ from discodrome import DiscodromeClient
 from util import env
 
 logger = logging.getLogger(__name__)
+
+def parse_seek_position(timestamp: str, duration: int) -> int:
+    ''' Parse an absolute position using the format required by the track's duration. '''
+    if duration <= 0:
+        raise ValueError("Cannot seek because this track's duration is unknown.")
+    if duration > 3600:
+        expected, pattern = "hh:mm:ss", r"[0-9]{2,}:[0-5][0-9]:[0-5][0-9]"
+    elif duration > 60:
+        expected, pattern = "mm:ss", r"[0-5][0-9]:[0-5][0-9]"
+    else:
+        expected, pattern = "ss", r"[0-5]?[0-9]"
+    if re.fullmatch(pattern, timestamp) is None:
+        raise ValueError(f"Use {expected} for this track's playback position.")
+    position = 0
+    for part in timestamp.split(":"):
+        position = position * 60 + int(part)
+    if position >= duration:
+        raise ValueError("The position must be before the end of the track.")
+    return position
+
 
 QUEUE_ITEMS_PER_PAGE = 10
 
@@ -236,7 +257,7 @@ class MusicCog(commands.Cog):
             await ctx.send("I am not connected to a voice channel.")
             return
 
-        if not voice_client.is_playing():
+        if not (voice_client.is_playing() or voice_client.is_paused()):
             await ctx.send("I am not currently playing anything.")
             return
 
@@ -325,7 +346,7 @@ class MusicCog(commands.Cog):
             return
 
         # Don't attempt playback if the bot is already playing
-        if voice_client.is_playing() and query is None:
+        if (voice_client.is_playing() or voice_client.is_paused()) and query is None:
             await ui.ErrMsg.already_playing(ctx)
             return
 
@@ -457,6 +478,80 @@ class MusicCog(commands.Cog):
 
         await ui.SysMsg.added_to_queue(ctx, songs[0])
 
+    @commands.hybrid_command(name="pause", description="Pause the current track")
+    async def pause(self, ctx: commands.Context) -> None:
+        voice_client = await self.get_voice_client(ctx)
+        if voice_client is None:
+            await ui.ErrMsg.bot_not_in_voice_channel(ctx)
+            return
+        if voice_client.is_paused():
+            await ui.ErrMsg.msg(ctx, "Playback is already paused.")
+            return
+        if not voice_client.is_playing():
+            await ui.ErrMsg.not_playing(ctx)
+            return
+        voice_client.pause()
+        await ui.SysMsg.msg(ctx, "Playback paused")
+
+    @commands.hybrid_command(name="pa", description="Pause the current track")
+    async def pause_short(self, ctx: commands.Context) -> None:
+        await ctx.invoke(self.pause)
+
+    @commands.hybrid_command(name="resume", description="Resume the paused track")
+    async def resume(self, ctx: commands.Context) -> None:
+        voice_client = await self.get_voice_client(ctx)
+        if voice_client is None:
+            await ui.ErrMsg.bot_not_in_voice_channel(ctx)
+            return
+        if not voice_client.is_paused():
+            await ui.ErrMsg.msg(ctx, "Playback is not paused.")
+            return
+        voice_client.resume()
+        await ui.SysMsg.msg(ctx, "Playback resumed")
+
+    @commands.hybrid_command(name="r", description="Resume the paused track")
+    async def resume_short(self, ctx: commands.Context) -> None:
+        await ctx.invoke(self.resume)
+
+    @commands.hybrid_command(name="goto", description="Jump to a position in the current track")
+    @app_commands.describe(position="Absolute timestamp: hh:mm:ss, mm:ss, or ss, depending on the track's length")
+    async def goto(self, ctx: commands.Context, position: str) -> None:
+        voice_client = await self.get_voice_client(ctx)
+        if voice_client is None:
+            await ui.ErrMsg.bot_not_in_voice_channel(ctx)
+            return
+        player = data.guild_data(ctx.guild.id).player
+        song = player.current_song
+        if song is None or not (voice_client.is_playing() or voice_client.is_paused()):
+            await ui.ErrMsg.not_playing(ctx)
+            return
+        try:
+            seconds = parse_seek_position(position, song.duration)
+        except ValueError as error:
+            await ui.ErrMsg.msg(ctx, str(error))
+            return
+        await ctx.defer()
+        player.channel = ctx.channel
+        if await player.stream_track(song, voice_client, position=seconds):
+            await ui.SysMsg.msg(ctx, f"Playback position set to {position}")
+        else:
+            await ui.ErrMsg.msg(ctx, "Could not change the playback position.")
+
+    @commands.hybrid_command(name="g", description="Jump to a position in the current track")
+    @app_commands.describe(position="Absolute timestamp: hh:mm:ss, mm:ss, or ss, depending on the track's length")
+    async def goto_short(self, ctx: commands.Context, position: str) -> None:
+        await ctx.invoke(self.goto, position=position)
+
+    @pause.error
+    @pause_short.error
+    @resume.error
+    @resume_short.error
+    @goto.error
+    @goto_short.error
+    async def playback_control_error(self, ctx, error):
+        logging.error(f"An error occurred while controlling playback: {error}")
+        await ui.ErrMsg.msg(ctx, "Could not control playback. Please check the bot's logs.")
+
 
 
     @commands.hybrid_command(name="stop", description="Stop playing the current track")
@@ -499,7 +594,7 @@ class MusicCog(commands.Cog):
             return
 
         player = data.guild_data(ctx.guild.id).player
-        if voice_client.is_playing():
+        if voice_client.is_playing() or voice_client.is_paused():
             player.stop(voice_client)
         player.queue.clear()
         player.current_song = None
@@ -612,7 +707,7 @@ class MusicCog(commands.Cog):
             return
 
         # Check if the bot is playing music
-        if not voice_client.is_playing():
+        if not (voice_client.is_playing() or voice_client.is_paused()):
             await ui.ErrMsg.not_playing(ctx)
             return
 
@@ -665,7 +760,7 @@ class MusicCog(commands.Cog):
         logger.debug(f"Voice client: {voice_client}")
         if voice_client:
             logger.debug(f"Is playing: {voice_client.is_playing()}")
-        if voice_client is not None and not voice_client.is_playing():
+        if voice_client is not None and not (voice_client.is_playing() or voice_client.is_paused()):
             player = data.guild_data(ctx.guild.id).player
             player.channel = ctx.channel
 

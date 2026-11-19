@@ -28,6 +28,9 @@ Music commands are hybrid commands, so they can be used as slash commands or wit
 | `/shuffle` | `?shuffle` | Shuffle the current queue |
 | `/skip` | `?skip` | Skip the current track |
 | `/stop` | `?stop` | Stop playing the current track |
+| `/pause`, `/pa` | `?pause`, `?pa` | Pause the current track |
+| `/resume`, `/r` | `?resume`, `?r` | Resume the paused track |
+| `/goto`, `/g` | `?goto`, `?g` | Jump to an absolute position in the current track |
 | `/leave` | `?leave` | Stop playback, clear the queue, and leave the voice channel |
 | `/autoplay` | `?autoplay` | Toggle autoplay |
 | `/audiobalance` | `?audiobalance` | Configure automatic audio balancing |
@@ -38,6 +41,18 @@ Music commands are hybrid commands, so they can be used as slash commands or wit
 The existing short music commands are available in both forms as well: `/p` and `?p` play a track, `/n` and `?n` queue one next, `/s` and `?s` skip, and `/q` and `?q` show the queue. Replace `?` with your configured `BOT_PREFIX` when it differs from the default. Prefix queries containing spaces can be entered as the remaining text after the command; quote playlist names when also specifying a page.
 
 `/play` and `/next` suggest matching tracks as you type; an empty track query suggests random tracks.
+
+`pause/pa`, `resume/r`, and `goto/g` control the current track without changing the queue. `p` remains the shortcut for **play**. Seeking while paused keeps the track paused.
+
+Choose the `goto/g` timestamp format using the current track's full duration:
+
+| Track duration | Required format | Example |
+|----------------|-----------------|---------|
+| More than one hour | `hh:mm:ss` | `/goto 01:02:03` |
+| More than one minute, up to and including one hour | `mm:ss` | `?g 02:30` |
+| Up to and including one minute | `ss` | `/g 15` |
+
+Colon-separated minutes and seconds require two digits from `00` to `59`; hours require at least two digits. Seconds-only input accepts one or two digits. Positions must be nonnegative and strictly before the end of the track. Tracks with an unknown duration cannot be seeked.
 
 Queue positions are 1-based and exclude the currently playing track. Use `/queue` (or `?queue`) to browse ten tracks per page, `/queue action:Remove index:2` (`?queue remove 2`) to remove a track, or `/queue action:Move index:3 target:1` (`?queue move 3 1`) to move one. Page buttons are available only to the command's author and show a snapshot of the queue.
 
