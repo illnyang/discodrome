@@ -600,6 +600,40 @@ class MusicCog(commands.Cog):
             await ui.ErrMsg.msg(ctx, f"An unknown error has occurred and has been logged to console. Please contact an administrator. {error}")
 
 
+    @commands.hybrid_command(name="audiobalance", description="Sets automatic audio balancing")
+    @app_commands.describe(mode="Determines how track loudness should be balanced")
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="Off", value="off"),
+        app_commands.Choice(name="ReplayGain", value="replaygain"),
+        app_commands.Choice(name="Dynamic", value="dynamic"),
+    ])
+    async def audiobalance(self, ctx: commands.Context, mode: str) -> None:
+        ''' Sets automatic audio balancing '''
+
+        if mode not in ("off", "replaygain", "dynamic"):
+            await ui.ErrMsg.msg(ctx, "Choose an audio balance mode: off, replaygain, or dynamic.")
+            return
+
+        match mode:
+            case "off":
+                data.guild_properties(ctx.guild.id).audio_balance_mode = data.AudioBalanceMode.OFF
+            case "replaygain":
+                data.guild_properties(ctx.guild.id).audio_balance_mode = data.AudioBalanceMode.REPLAYGAIN
+            case "dynamic":
+                data.guild_properties(ctx.guild.id).audio_balance_mode = data.AudioBalanceMode.DYNAMIC
+
+        await ui.SysMsg.msg(
+            ctx,
+            f"Audio balancing set to {mode.capitalize()} by {ctx.author.display_name}",
+            "This applies when the next track starts."
+        )
+
+    @audiobalance.error
+    async def audiobalance_error(self, ctx, error):
+        logging.error(f"An error occurred while setting audio balance: {error}")
+        await ui.ErrMsg.msg(ctx, f"An unknown error has occurred and has been logged to console. Please contact an administrator. {error}")
+
+
 
     @commands.hybrid_command(name="shuffle", description="Shuffles the current queue")
     async def shuffle(self, ctx: commands.Context):

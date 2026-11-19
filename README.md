@@ -30,6 +30,7 @@ Music commands are hybrid commands, so they can be used as slash commands or wit
 | `/stop` | `?stop` | Stop playing the current track |
 | `/leave` | `?leave` | Stop playback, clear the queue, and leave the voice channel |
 | `/autoplay` | `?autoplay` | Toggle autoplay |
+| `/audiobalance` | `?audiobalance` | Configure automatic audio balancing |
 | `/playlists` | `?playlists` | List available playlists |
 | `/playlist` | `?playlist` | List songs in a playlist |
 | `/sync` | `?sync` | Sync application commands (owner only) |
@@ -99,6 +100,7 @@ The Compose file builds from your local checkout, including any merged changes. 
 | `DISCORD_BOT_TOKEN` | Your Discord bot token | Yes |
 | `DISCORD_OWNER_ID` | Your Discord user ID | Yes |
 | `DISCORD_TEST_GUILD` | Discord server ID for testing during development. Set this to sync commands to that server immediately as well as globally; without it, global slash-command updates may take time to appear. | No |
+| `APP_ID` | Optional Discord application ID for the listening activity. | No |
 | `BOT_STATUS` | Custom status message for the bot | No |
 | `BOT_PREFIX` | Command prefix for the bot. If unset, prefix commands can still be used with an @mention. An empty string will cause all messages to be interpreted as commands. | No |
 | `BOT_SEARCH_SUGGESTION_COUNT` | Number of items to display in the autocomplete menu. Defaults to 5. | No |

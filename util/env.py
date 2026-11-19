@@ -9,6 +9,8 @@ DISCORD_BOT_TOKEN: Final[str] = os.getenv("DISCORD_BOT_TOKEN")
 _discord_test_guild = os.getenv("DISCORD_TEST_GUILD")
 DISCORD_TEST_GUILD: Final[int | None] = int(_discord_test_guild) if _discord_test_guild else None
 DISCORD_OWNER_ID: Final[int] = int(os.getenv("DISCORD_OWNER_ID"))
+_app_id = os.getenv("APP_ID")
+APP_ID: Final[int | None] = int(_app_id) if _app_id else None
 
 SUBSONIC_SERVER: Final[str] = os.getenv("SUBSONIC_SERVER")
 SUBSONIC_USER: Final[str] = os.getenv("SUBSONIC_USER")
